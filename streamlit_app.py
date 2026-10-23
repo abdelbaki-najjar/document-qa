@@ -1,6 +1,6 @@
 import streamlit as st
 import pypdf
-import openai
+import google.generativeai as genai
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
@@ -9,7 +9,7 @@ import io
 import json
 
 # ضبط إعدادات الصفحة
-st.set_page_config(page_title="المساعد البيداغوجي الذكي", page_icon="🪄", layout="wide")
+st.set_page_config(page_title="المساعد البيداغوجي الذكي - Gemini", page_icon="🪄", layout="wide")
 
 # CSS لدعم اللغة العربية وتنسيق الواجهة
 st.markdown("""
@@ -26,14 +26,14 @@ st.markdown("""
 
 st.markdown("""
 <div class="main-header">
-    <h2 style="margin:0;">🪄 المساعد البيداغوجي الذكي (توليد وضعيات العلاج بالذكاء الاصطناعي)</h2>
-    <p style="margin:5px 0 0 0;">قم برفع أي ملف تقييم (PDF)، وسيقوم الذكاء الاصطناعي بتحليله وإنشاء وضعيات علاجية وملف PDF جاهز للطباعة فوراً.</p>
+    <h2 style="margin:0;">🪄 المساعد البيداغوجي الذكي (مدعوم بـ Google Gemini)</h2>
+    <p style="margin:5px 0 0 0;">قم برفع ملف التقييم (PDF)، وسيقوم Gemini بتحليله وإنشاء وضعيات علاجية وملف PDF جاهز للطباعة.</p>
 </div>
 """, unsafe_allow_html=True)
 
-# مفتاح API الخاص بالذكاء الاصطناعي
+# إدخال المفتاح من الشريط الجانبي
 st.sidebar.header("⚙️ الإعدادات")
-api_key = st.sidebar.text_input("أدخل مفتاح OpenAI API Key:", type="password")
+api_key = st.sidebar.text_input("أدخل مفتاح Gemini API Key:", type="password")
 
 uploaded_file = st.sidebar.file_uploader("📂 اختر ملف التقييم (PDF)", type=["pdf"])
 
@@ -45,16 +45,18 @@ def extract_text_from_pdf(file):
         text += page.extract_text() or ""
     return text
 
-# دالة استدعاء الذكاء الاصطناعي لتوليد الوضعيات
-def generate_remedial_with_ai(pdf_text, api_key):
-    client = openai.OpenAI(api_key=api_key)
+# دالة استدعاء Gemini API
+def generate_remedial_with_gemini(pdf_text, api_key):
+    genai.configure(api_key=api_key)
+    # استخدام نموذج gemini-2.5-flash أو gemini-1.5-pro السريع والفعال
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
     أنت خبير بيداغوجي ومختص في الهندسة التعليمية.
     بناءً على نص ملف التقييم المرفق أسفله:
     1. استخرج المعايير والأخطاء المرصوحة وأسماء التلاميذ المعنيين بالتثبيت/العلاج.
     2. صمم وضعيات دعم وعلاج فارقية ومبتكرة لكل معيار فيه تعثر.
-    3. أرجع النتيجة على شكل تنسيق JSON حصراً بالهيكل التالي دون أي كلام إضافي:
+    3. أرجع النتيجة على شكل كود JSON نقي حصراً بالهيكل التالي (بدون أي علامات تخريب أو markdown خارج النص إن أمكن، فقط JSON):
     {{
         "title": "عنوان التقرير",
         "eval_info": "معلومات التقييم (المادة، المستوى، التاريخ...)",
@@ -75,13 +77,16 @@ def generate_remedial_with_ai(pdf_text, api_key):
     {pdf_text}
     """
     
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"}
-    )
+    response = model.generate_content(prompt)
+    clean_text = response.text.strip()
     
-    return json.loads(response.choices[0].message.content)
+    # تنظيف المخرجات في حال وُجدت علامات الـ markdown للـ json
+    if clean_text.startswith("```json"):
+        clean_text = clean_text[7:]
+    if clean_text.endswith("```"):
+        clean_text = clean_text[:-3]
+        
+    return json.loads(clean_text.strip())
 
 # دالة إنشاء ملف الـ PDF الاحترافي
 def build_pdf_document(ai_data):
@@ -95,7 +100,6 @@ def build_pdf_document(ai_data):
     heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor("#2a5298"))
     body_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10, leading=14)
     
-    # العنوان
     story.append(Paragraph(ai_data.get("title", "ملف وضعيات الدعم والعلاج"), title_style))
     story.append(Paragraph(ai_data.get("eval_info", ""), subtitle_style))
     story.append(Spacer(1, 15))
@@ -106,7 +110,6 @@ def build_pdf_document(ai_data):
         story.append(Paragraph(f"<b>مصدر الخطأ:</b> {sit['error_source']}", body_style))
         story.append(Spacer(1, 5))
         
-        # صندوق الوضعية
         story.append(Paragraph(f"<b>{sit['activity_title']}</b>", heading_style))
         story.append(Paragraph(f"<b>السياق:</b> {sit['context']}", body_style))
         story.append(Paragraph("<b>المهام والمطاليب:</b>", body_style))
@@ -125,31 +128,31 @@ def build_pdf_document(ai_data):
 
 # التنفيذ
 if uploaded_file and api_key:
-    if st.button("🚀 تحليل الملف وتوليد وضعيات العلاج والـ PDF"):
-        with st.spinner("جاري قراءة الملف وتحليله بواسطة الذكاء الاصطناعي..."):
-            text = extract_text_from_pdf(uploaded_file)
-            ai_result = generate_remedial_with_ai(text, api_key)
-            
-            st.success("✨ تم تحليل الملف وتوليد الوضعيات بنجاح!")
-            
-            # عرض الوضعيات
-            st.write("### 📋 الوضعيات المولدة:")
-            for sit in ai_result.get("situations", []):
-                with st.expander(f"📌 {sit['criterion']} - {sit['students']}"):
-                    st.write(f"**نص الوضعية:** {sit['context']}")
-                    st.write("**المهام:**")
-                    for task in sit['tasks']:
-                        st.write(f"- {task}")
-                    st.info(f"**توجيهات المعلم:** {sit['guidance']}")
-            
-            # إنتاج الـ PDF
-            pdf_out = build_pdf_document(ai_result)
-            
-            st.download_button(
-                label="📥 تحميل ملف الـ PDF الاحترافي والجاهز للطباعة",
-                data=pdf_out,
-                file_name="وضعيات_الدعم_والعلاج_المولدة.pdf",
-                mime="application/pdf"
-            )
+    if st.button("🚀 تحليل الملف بواسطة Gemini وتوليد الـ PDF"):
+        with st.spinner("جاري قراءة الملف وتحليله عبر Gemini AI..."):
+            try:
+                text = extract_text_from_pdf(uploaded_file)
+                ai_result = generate_remedial_with_gemini(text, api_key)
+                
+                st.success("✨ تم تحليل الملف وتوليد الوضعيات بنجاح!")
+                
+                for sit in ai_result.get("situations", []):
+                    with st.expander(f"📌 {sit['criterion']} - {sit['students']}"):
+                        st.write(f"**نص الوضعية:** {sit['context']}")
+                        st.write("**المهام:**")
+                        for task in sit['tasks']:
+                            st.write(f"- {task}")
+                        st.info(f"**توجيهات المعلم:** {sit['guidance']}")
+                
+                pdf_out = build_pdf_document(ai_result)
+                
+                st.download_button(
+                    label="📥 تحميل ملف الـ PDF الاحترافي والجاهز للطباعة",
+                    data=pdf_out,
+                    file_name="وضعيات_الدعم_والعلاج_Gemini.pdf",
+                    mime="application/pdf"
+                )
+            except Exception as e:
+                st.error(f حدث خطأ أثناء المعالجة: {e}")
 elif uploaded_file and not api_key:
-    st.warning("⚠️ يرجى إدخال مفتاح OpenAI API في القائمة الجانبية لتشغيل الذكاء الاصطناعي.")
+    st.warning("⚠️ يرجى إدخال مفتاح Google Gemini API Key في القائمة الجانبية.")
