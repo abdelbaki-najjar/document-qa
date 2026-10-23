@@ -117,10 +117,10 @@ def analyze_and_generate_with_gemini(pdf_text, key):
     except Exception:
         genai.configure(api_key=key)
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            model = genai.GenerativeModel('gemini-4-argon')
             response = model.generate_content(f"{system_prompt}\n\nنص ملف التقييم:\n{pdf_text}")
         except Exception:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-4-argon')
             response = model.generate_content(f"{system_prompt}\n\nنص ملف التقييم:\n{pdf_text}")
         return json.loads(clean_json_response(response.text))
 
