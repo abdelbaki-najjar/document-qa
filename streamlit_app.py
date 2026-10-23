@@ -49,7 +49,7 @@ def extract_text_from_pdf(file):
 def generate_remedial_with_gemini(pdf_text, api_key):
     genai.configure(api_key=api_key)
     # استخدام نموذج gemini-2.5-flash أو gemini-1.5-flash المعتمد حالياً
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    model = genai.GenerativeModel('gemini-3.8-flash')
     
     prompt = f"""
     أنت خبير بيداغوجي ومختص في الهندسة التعليمية.
