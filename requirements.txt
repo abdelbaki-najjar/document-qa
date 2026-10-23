@@ -4,3 +4,4 @@ pypdf
 reportlab
 google-generativeai
 weasyprint
+fpdf2
