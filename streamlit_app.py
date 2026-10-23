@@ -45,11 +45,11 @@ def extract_text_from_pdf(file):
         text += page.extract_text() or ""
     return text
 
-# دالة استدعاء Gemini API
+# دالة استدعاء Gemini API باستخدام أحدث نموذج مدعوم
 def generate_remedial_with_gemini(pdf_text, api_key):
     genai.configure(api_key=api_key)
-    # استخدام نموذج gemini-2.5-flash أو gemini-1.5-pro السريع والفعال
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    # استخدام نموذج gemini-2.5-flash أو gemini-1.5-flash المعتمد حالياً
+    model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
     أنت خبير بيداغوجي ومختص في الهندسة التعليمية.
@@ -80,7 +80,6 @@ def generate_remedial_with_gemini(pdf_text, api_key):
     response = model.generate_content(prompt)
     clean_text = response.text.strip()
     
-    # تنظيف المخرجات في حال وُجدت علامات الـ markdown للـ json
     if clean_text.startswith("```json"):
         clean_text = clean_text[7:]
     if clean_text.endswith("```"):
