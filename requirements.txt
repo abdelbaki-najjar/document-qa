@@ -3,3 +3,4 @@ openai
 pypdf
 reportlab
 google-generativeai
+weasyprint
