@@ -153,6 +153,6 @@ if uploaded_file and api_key:
                     mime="application/pdf"
                 )
             except Exception as e:
-                st.error(f "حدث خطأ أثناء المعالجة: {e}")
+                st.error(f"حدث خطأ أثناء المعالجة: {e}")
 elif uploaded_file and not api_key:
     st.warning("⚠️ يرجى إدخال مفتاح Google Gemini API Key في القائمة الجانبية.")
