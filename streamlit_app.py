@@ -115,34 +115,25 @@ def analyze_and_generate_with_gemini(pdf_text, key):
     return json.loads(clean_json_response(response.text))
 
 
-# دالة توليد PDF مع التأكد من توفر خط أميري العربي
+# دالة توليد PDF مع تحميل الخط العربي بطريقة مضمونة تمنع الحظر
 def generate_pdf_with_fpdf(data):
   font_path = "Amiri-Regular.ttf"
   if not os.path.exists(font_path):
-    try:
-      url = "[https://github.com/googlefonts/quranic-fonts/raw/main/fonts/TrueType/Amiri-Regular.ttf](https://github.com/googlefonts/quranic-fonts/raw/main/fonts/TrueType/Amiri-Regular.ttf)"
-      urllib.request.urlretrieve(url, font_path)
-    except Exception:
-      # رابط بديل للخط
-      try:
-        url_alt = (
-            "[https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf](https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf)"
-        )
-        urllib.request.urlretrieve(url_alt, font_path)
-      except:
-        pass
+    url = (
+        "[https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf](https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf)"
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req) as response, open(
+        font_path, "wb"
+    ) as out_file:
+      out_file.write(response.read())
 
   pdf = FPDF()
   pdf.add_page()
 
-  # إضافة الخط العربي حصراً لتجنب أخطاء Helvetica
-  if os.path.exists(font_path):
-    pdf.add_font("Amiri", "", font_path)
-    pdf.set_font("Amiri", size=14)
-  else:
-    raise RuntimeError(
-        "لم يتم العثور على ملف الخط العربي ولم يتم تحميله بنجاح."
-    )
+  # تسجيل واستخدام الخط العربي
+  pdf.add_font("Amiri", "", font_path)
+  pdf.set_font("Amiri", size=14)
 
   # العنوان الرئيسي
   pdf.cell(0, 10, txt=data.get("title", "تقرير وضعيات الدعم والعلاج"), ln=True, align="C")
