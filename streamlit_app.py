@@ -102,51 +102,56 @@ def analyze_and_generate_with_gemini(pdf_text, key):
   try:
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
-        model="gemini-3.8-flash",
+        model="gemini-2.5-flash",
         contents=f"{system_prompt}\n\nنص ملف التقييم:\n{pdf_text}",
     )
     return json.loads(clean_json_response(response.text))
   except Exception:
     genai.configure(api_key=key)
-    model = genai.GenerativeModel("gemini-3.8-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash")
     response = model.generate_content(
         f"{system_prompt}\n\nنص ملف التقييم:\n{pdf_text}"
     )
     return json.loads(clean_json_response(response.text))
 
 
-# دالة توليد PDF باستخدام fpdf2 مع تحميل خط عربي تلقائي
+# دالة توليد PDF مع التأكد من توفر خط أميري العربي
 def generate_pdf_with_fpdf(data):
   font_path = "Amiri-Regular.ttf"
   if not os.path.exists(font_path):
     try:
-      urllib.request.urlretrieve(
-          "[https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf](https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf)",
-          font_path,
-      )
-    except:
-      pass
+      url = "[https://github.com/googlefonts/quranic-fonts/raw/main/fonts/TrueType/Amiri-Regular.ttf](https://github.com/googlefonts/quranic-fonts/raw/main/fonts/TrueType/Amiri-Regular.ttf)"
+      urllib.request.urlretrieve(url, font_path)
+    except Exception:
+      # رابط بديل للخط
+      try:
+        url_alt = (
+            "[https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf](https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf)"
+        )
+        urllib.request.urlretrieve(url_alt, font_path)
+      except:
+        pass
 
   pdf = FPDF()
   pdf.add_page()
 
+  # إضافة الخط العربي حصراً لتجنب أخطاء Helvetica
   if os.path.exists(font_path):
     pdf.add_font("Amiri", "", font_path)
     pdf.set_font("Amiri", size=14)
   else:
-    pdf.set_font("Arial", size=14)
+    raise RuntimeError(
+        "لم يتم العثور على ملف الخط العربي ولم يتم تحميله بنجاح."
+    )
 
-  # العنوان
+  # العنوان الرئيسي
   pdf.cell(0, 10, txt=data.get("title", "تقرير وضعيات الدعم والعلاج"), ln=True, align="C")
   if data.get("subtitle"):
-    pdf.set_font("Amiri" if os.path.exists(font_path) else "Arial", size=10)
+    pdf.set_font("Amiri", size=10)
     pdf.cell(0, 8, txt=data.get("subtitle"), ln=True, align="C")
 
   pdf.ln(8)
-  if os.path.exists(font_path):
-    pdf.set_font("Amiri", size=11)
-  else:
-    pdf.set_font("Arial", size=11)
+  pdf.set_font("Amiri", size=11)
 
   for sit in data.get("situations", []):
     pdf.set_text_color(30, 60, 114)
