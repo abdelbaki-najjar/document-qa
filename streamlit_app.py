@@ -1,53 +1,155 @@
 import streamlit as st
-from openai import OpenAI
+import pypdf
+import openai
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib import colors
+import io
+import json
 
-# Show title and description.
-st.title("📄 Document question answering")
-st.write(
-    "Upload a document below and ask a question about it – GPT will answer! "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-)
+# ضبط إعدادات الصفحة
+st.set_page_config(page_title="المساعد البيداغوجي الذكي", page_icon="🪄", layout="wide")
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
+# CSS لدعم اللغة العربية وتنسيق الواجهة
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
+    html, body, [class*="css"] { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
+    .stApp { background-color: #f8f9fa; }
+    .main-header {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+st.markdown("""
+<div class="main-header">
+    <h2 style="margin:0;">🪄 المساعد البيداغوجي الذكي (توليد وضعيات العلاج بالذكاء الاصطناعي)</h2>
+    <p style="margin:5px 0 0 0;">قم برفع أي ملف تقييم (PDF)، وسيقوم الذكاء الاصطناعي بتحليله وإنشاء وضعيات علاجية وملف PDF جاهز للطباعة فوراً.</p>
+</div>
+""", unsafe_allow_html=True)
 
-    # Let the user upload a file via `st.file_uploader`.
-    uploaded_file = st.file_uploader(
-        "Upload a document (.txt or .md)", type=("txt", "md")
-    )
+# مفتاح API الخاص بالذكاء الاصطناعي
+st.sidebar.header("⚙️ الإعدادات")
+api_key = st.sidebar.text_input("أدخل مفتاح OpenAI API Key:", type="password")
 
-    # Ask the user for a question via `st.text_area`.
-    question = st.text_area(
-        "Now ask a question about the document!",
-        placeholder="Can you give me a short summary?",
-        disabled=not uploaded_file,
-    )
+uploaded_file = st.sidebar.file_uploader("📂 اختر ملف التقييم (PDF)", type=["pdf"])
 
-    if uploaded_file and question:
+# دالة قراءة الـ PDF
+def extract_text_from_pdf(file):
+    reader = pypdf.PdfReader(file)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() or ""
+    return text
 
-        # Process the uploaded file and question.
-        document = uploaded_file.read().decode()
-        messages = [
-            {
-                "role": "user",
-                "content": f"Here's a document: {document} \n\n---\n\n {question}",
-            }
+# دالة استدعاء الذكاء الاصطناعي لتوليد الوضعيات
+def generate_remedial_with_ai(pdf_text, api_key):
+    client = openai.OpenAI(api_key=api_key)
+    
+    prompt = f"""
+    أنت خبير بيداغوجي ومختص في الهندسة التعليمية.
+    بناءً على نص ملف التقييم المرفق أسفله:
+    1. استخرج المعايير والأخطاء المرصوحة وأسماء التلاميذ المعنيين بالتثبيت/العلاج.
+    2. صمم وضعيات دعم وعلاج فارقية ومبتكرة لكل معيار فيه تعثر.
+    3. أرجع النتيجة على شكل تنسيق JSON حصراً بالهيكل التالي دون أي كلام إضافي:
+    {{
+        "title": "عنوان التقرير",
+        "eval_info": "معلومات التقييم (المادة، المستوى، التاريخ...)",
+        "situations": [
+            {{
+                "criterion": "اسم المعيار",
+                "students": "أسماء التلاميذ المعنيين",
+                "error_source": "مصدر الخطأ وتأويله",
+                "activity_title": "عنوان الوضعية العلاجية",
+                "context": "نص الوضعية والسياق",
+                "tasks": ["المطلب 1", "المطلب 2", "المطلب 3"],
+                "guidance": "التوجيهات البيداغوجية للمعلم"
+            }}
         ]
+    }}
 
-        # Generate an answer using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            stream=True,
-        )
+    نص ملف التقييم:
+    {pdf_text}
+    """
+    
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"}
+    )
+    
+    return json.loads(response.choices[0].message.content)
 
-        # Stream the response to the app using `st.write_stream`.
-        st.write_stream(stream)
+# دالة إنشاء ملف الـ PDF الاحترافي
+def build_pdf_document(ai_data):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor("#1e3c72"), alignment=1)
+    subtitle_style = ParagraphStyle('SubTitle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=1)
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor("#2a5298"))
+    body_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10, leading=14)
+    
+    # العنوان
+    story.append(Paragraph(ai_data.get("title", "ملف وضعيات الدعم والعلاج"), title_style))
+    story.append(Paragraph(ai_data.get("eval_info", ""), subtitle_style))
+    story.append(Spacer(1, 15))
+    
+    for sit in ai_data.get("situations", []):
+        story.append(Paragraph(f"<b>المعيار المستهدف:</b> {sit['criterion']}", heading_style))
+        story.append(Paragraph(f"<b>التلاميذ المعنيون:</b> {sit['students']}", body_style))
+        story.append(Paragraph(f"<b>مصدر الخطأ:</b> {sit['error_source']}", body_style))
+        story.append(Spacer(1, 5))
+        
+        # صندوق الوضعية
+        story.append(Paragraph(f"<b>{sit['activity_title']}</b>", heading_style))
+        story.append(Paragraph(f"<b>السياق:</b> {sit['context']}", body_style))
+        story.append(Paragraph("<b>المهام والمطاليب:</b>", body_style))
+        for t in sit.get("tasks", []):
+            story.append(Paragraph(f"• {t}", body_style))
+        
+        story.append(Spacer(1, 5))
+        story.append(Paragraph(f"<b>💡 توجيهات للمعلم:</b> {sit['guidance']}", body_style))
+        story.append(Spacer(1, 10))
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cbd5e1")))
+        story.append(Spacer(1, 10))
+        
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# التنفيذ
+if uploaded_file and api_key:
+    if st.button("🚀 تحليل الملف وتوليد وضعيات العلاج والـ PDF"):
+        with st.spinner("جاري قراءة الملف وتحليله بواسطة الذكاء الاصطناعي..."):
+            text = extract_text_from_pdf(uploaded_file)
+            ai_result = generate_remedial_with_ai(text, api_key)
+            
+            st.success("✨ تم تحليل الملف وتوليد الوضعيات بنجاح!")
+            
+            # عرض الوضعيات
+            st.write("### 📋 الوضعيات المولدة:")
+            for sit in ai_result.get("situations", []):
+                with st.expander(f"📌 {sit['criterion']} - {sit['students']}"):
+                    st.write(f"**نص الوضعية:** {sit['context']}")
+                    st.write("**المهام:**")
+                    for task in sit['tasks']:
+                        st.write(f"- {task}")
+                    st.info(f"**توجيهات المعلم:** {sit['guidance']}")
+            
+            # إنتاج الـ PDF
+            pdf_out = build_pdf_document(ai_result)
+            
+            st.download_button(
+                label="📥 تحميل ملف الـ PDF الاحترافي والجاهز للطباعة",
+                data=pdf_out,
+                file_name="وضعيات_الدعم_والعلاج_المولدة.pdf",
+                mime="application/pdf"
+            )
+elif uploaded_file and not api_key:
+    st.warning("⚠️ يرجى إدخال مفتاح OpenAI API في القائمة الجانبية لتشغيل الذكاء الاصطناعي.")
